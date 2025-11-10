@@ -1,0 +1,13 @@
+# Dependências do Bot de Tickets Discord
+
+# Discord.py - Biblioteca principal
+discord.py>=2.3.2
+
+# Carregamento de variáveis de ambiente
+python-dotenv>=1.0.0
+
+# Async IO (já incluído no Python 3.7+, mas listado para referência)
+# asyncio
+
+# Opcional: Para melhor performance
+aiohttp>=3.9.0
