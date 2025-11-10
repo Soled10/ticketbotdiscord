@@ -83,7 +83,55 @@ class TicketSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    @app_commands.command(name="painel", description="Cria um painel para abertura de tickets")
+    async def create_panel_in_channel(self, channel: discord.TextChannel, guild_id: int):
+        """Cria um painel de tickets em um canal específico"""
+        config = self.bot.get_guild_config(guild_id)
+        
+        # Verificar categorias ativas
+        categories = config.get('ticket_categories', {})
+        active_cats = [c for c in categories.values() if c.get('enabled', True)]
+        
+        if not active_cats:
+            return False
+        
+        # Criar embed
+        embed = discord.Embed(
+            title="🎫 Sistema de Tickets",
+            description="Selecione o tipo de ticket no menu abaixo para abrir um canal privado de atendimento.",
+            color=discord.Color.blue()
+        )
+        
+        # Adicionar categorias disponíveis
+        cat_text = []
+        for cat_data in active_cats:
+            cat_text.append(f"{cat_data['emoji']} **{cat_data['name']}** - {cat_data['description']}")
+        
+        embed.add_field(
+            name="📋 Categorias Disponíveis",
+            value="\n".join(cat_text),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="ℹ️ Como usar",
+            value="Selecione o tipo de ticket no menu abaixo e aguarde a criação do seu canal privado.",
+            inline=False
+        )
+        
+        guild = self.bot.get_guild(guild_id)
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        
+        embed.set_footer(text="Sistema de Tickets • Configure tudo com /painel")
+        
+        # Criar view com select menu
+        view = TicketCreateView(self.bot, guild_id)
+        
+        # Enviar painel
+        await channel.send(embed=embed, view=view)
+        return True
+    
+    @app_commands.command(name="criar-painel-ticket", description="Cria um painel para abertura de tickets")
     @app_commands.describe(
         titulo="Título do painel",
         descricao="Descrição do painel",
@@ -283,6 +331,11 @@ class TicketSystem(commands.Cog):
                 embed=embed,
                 view=view
             )
+            
+            # Atualizar estatísticas
+            stats_cog = self.bot.get_cog('Statistics')
+            if stats_cog:
+                stats_cog.update_ticket_stats(interaction.guild_id, category_id)
             
             # Log
             await self.log_ticket_action(

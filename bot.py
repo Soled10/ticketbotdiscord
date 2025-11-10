@@ -1,7 +1,7 @@
 """
-Bot de Tickets para Discord
+Bot de Tickets para Discord com IA
 Bot totalmente configurável via Discord usando slash commands
-Sistema completo de tickets com emojis personalizados
+Sistema completo de tickets com emojis personalizados e assistente IA
 """
 import discord
 from discord.ext import commands
@@ -29,20 +29,35 @@ class TicketBot(commands.Bot):
         
         self.config_file = "config/guild_configs.json"
         self.tickets_file = "config/tickets_data.json"
+        self.stats_file = "config/statistics.json"
+        self.faq_file = "config/faq_data.json"
+        
         self.guild_configs = {}
         self.tickets_data = {}
+        self.statistics = {}
+        self.faq_data = {}
+        
+        # Configuração de IA
+        self.ai_enabled = os.getenv('AI_ENABLED', 'false').lower() == 'true'
+        self.ai_provider = os.getenv('AI_PROVIDER', 'openai')  # openai, anthropic, groq
+        self.ai_api_key = os.getenv('AI_API_KEY', '')
+        self.ai_model = os.getenv('AI_MODEL', 'gpt-3.5-turbo')
         
     async def setup_hook(self):
         """Carrega as cogs e sincroniza comandos"""
         # Carregar configurações
         self.load_configs()
         self.load_tickets_data()
+        self.load_statistics()
+        self.load_faq_data()
         
         # Carregar cogs
         cogs_to_load = [
-            "cogs.ticket_config",
+            "cogs.painel_config",
             "cogs.ticket_system",
             "cogs.ticket_management",
+            "cogs.ai_assistant",
+            "cogs.statistics",
             "cogs.utilidades"
         ]
         
@@ -90,6 +105,36 @@ class TicketBot(commands.Bot):
         with open(self.tickets_file, 'w', encoding='utf-8') as f:
             json.dump(self.tickets_data, f, indent=4, ensure_ascii=False)
     
+    def load_statistics(self):
+        """Carrega estatísticas"""
+        if os.path.exists(self.stats_file):
+            with open(self.stats_file, 'r', encoding='utf-8') as f:
+                self.statistics = json.load(f)
+        else:
+            self.statistics = {}
+            self.save_statistics()
+    
+    def save_statistics(self):
+        """Salva estatísticas"""
+        os.makedirs("config", exist_ok=True)
+        with open(self.stats_file, 'w', encoding='utf-8') as f:
+            json.dump(self.statistics, f, indent=4, ensure_ascii=False)
+    
+    def load_faq_data(self):
+        """Carrega dados de FAQ"""
+        if os.path.exists(self.faq_file):
+            with open(self.faq_file, 'r', encoding='utf-8') as f:
+                self.faq_data = json.load(f)
+        else:
+            self.faq_data = {}
+            self.save_faq_data()
+    
+    def save_faq_data(self):
+        """Salva dados de FAQ"""
+        os.makedirs("config", exist_ok=True)
+        with open(self.faq_file, 'w', encoding='utf-8') as f:
+            json.dump(self.faq_data, f, indent=4, ensure_ascii=False)
+    
     def get_guild_config(self, guild_id: int):
         """Obtém configuração de um servidor específico"""
         guild_id_str = str(guild_id)
@@ -100,7 +145,7 @@ class TicketBot(commands.Bot):
                 "ticket_logs": None,
                 "support_role": None,
                 "ticket_counter": 0,
-                "ticket_message": "Olá {user}! Obrigado por abrir um ticket.\nNossa equipe responderá em breve.",
+                "ticket_message": "Olá {user}! 👋 Obrigado por abrir um ticket.\n\nNossa equipe responderá em breve.",
                 "close_message": "Ticket fechado por {user}.",
                 "max_tickets_per_user": 3,
                 "ticket_categories": {
@@ -131,7 +176,15 @@ class TicketBot(commands.Bot):
                 },
                 "auto_delete_closed": False,
                 "delete_after_minutes": 5,
-                "transcript_enabled": True
+                "transcript_enabled": True,
+                "ai_enabled": False,
+                "ai_auto_respond": False,
+                "ai_suggest_responses": True,
+                "ai_sentiment_analysis": True,
+                "ai_language": "pt-BR",
+                "rating_enabled": True,
+                "priority_system": True,
+                "notification_role": None
             }
             self.save_configs()
         return self.guild_configs[guild_id_str]
@@ -154,6 +207,34 @@ class TicketBot(commands.Bot):
             self.save_tickets_data()
         return self.tickets_data[guild_id_str]
     
+    def get_statistics(self, guild_id: int):
+        """Obtém estatísticas de um servidor"""
+        guild_id_str = str(guild_id)
+        if guild_id_str not in self.statistics:
+            self.statistics[guild_id_str] = {
+                "total_tickets": 0,
+                "tickets_by_category": {},
+                "average_response_time": 0,
+                "average_resolution_time": 0,
+                "satisfaction_ratings": [],
+                "busiest_hours": {},
+                "top_staff": {},
+                "monthly_stats": {}
+            }
+            self.save_statistics()
+        return self.statistics[guild_id_str]
+    
+    def get_faq_data(self, guild_id: int):
+        """Obtém dados de FAQ de um servidor"""
+        guild_id_str = str(guild_id)
+        if guild_id_str not in self.faq_data:
+            self.faq_data[guild_id_str] = {
+                "faqs": [],
+                "auto_suggest": True
+            }
+            self.save_faq_data()
+        return self.faq_data[guild_id_str]
+    
     async def on_ready(self):
         """Evento quando o bot está pronto"""
         print(f"╔═══════════════════════════════════════╗")
@@ -161,13 +242,15 @@ class TicketBot(commands.Bot):
         print(f"║  Nome: {self.user.name}")
         print(f"║  ID: {self.user.id}")
         print(f"║  Servidores: {len(self.guilds)}")
+        if self.ai_enabled:
+            print(f"║  🤖 IA: Ativada ({self.ai_provider})")
         print(f"╚═══════════════════════════════════════╝")
         
         # Definir status
         await self.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name="tickets | /ajuda"
+                name="tickets | /painel"
             )
         )
 
